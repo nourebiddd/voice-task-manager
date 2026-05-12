@@ -129,9 +129,7 @@ export default function App() {
       speak(reply);
 
     } catch (err) {
-      const errMsg = messages.length <= 1 
-        ? "The server is waking up — please try again in 30 seconds!" 
-        : "Sorry, something went wrong. Please try again.";
+      const errMsg = "The server is waking up! Please try again in 30 seconds.";
       addMessage('system', errMsg);
       speak(errMsg);
     }finally {
