@@ -129,10 +129,12 @@ export default function App() {
       speak(reply);
 
     } catch (err) {
-      const errMsg = "Sorry, something went wrong. Please try again.";
+      const errMsg = messages.length <= 1 
+        ? "The server is waking up — please try again in 30 seconds!" 
+        : "Sorry, something went wrong. Please try again.";
       addMessage('system', errMsg);
       speak(errMsg);
-    } finally {
+    }finally {
       setIsProcessing(false);
     }
   }, [isProcessing, history, tasks, pendingDelete, token]);
