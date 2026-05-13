@@ -114,18 +114,19 @@ export default function App() {
             },
             body: JSON.stringify({ transcript: text, history, tasks }),
           });
-          if (response.ok) break;
-          throw new Error('Server error');
-        } catch {
+          break; // server responded (even with an error status) — stop retrying
+        } catch (networkErr) {
+          // only retry on network failures (server unreachable = Render cold start)
           if (attempt < 3) {
             setStatus(`Server waking up... retrying (${attempt}/3)`);
             await new Promise(r => setTimeout(r, 4000));
           } else {
-            throw new Error('Server unavailable');
+            throw networkErr;
           }
         }
       }
 
+      if (!response.ok) throw new Error('Server error');
       const data = await response.json();
 
       if (data.tasks) setTasks(data.tasks);
