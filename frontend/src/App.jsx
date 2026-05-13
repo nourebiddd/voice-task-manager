@@ -103,16 +103,29 @@ export default function App() {
         setPendingDelete(null);
       }
 
-      const response = await fetch(`${API_BASE}/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ transcript: text, history, tasks }),
-      });
+      let response;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          response = await fetch(`${API_BASE}/chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ transcript: text, history, tasks }),
+          });
+          if (response.ok) break;
+          throw new Error('Server error');
+        } catch {
+          if (attempt < 3) {
+            setStatus(`Server waking up... retrying (${attempt}/3)`);
+            await new Promise(r => setTimeout(r, 4000));
+          } else {
+            throw new Error('Server unavailable');
+          }
+        }
+      }
 
-      if (!response.ok) throw new Error('Server error');
       const data = await response.json();
 
       if (data.tasks) setTasks(data.tasks);
@@ -129,10 +142,10 @@ export default function App() {
       speak(reply);
 
     } catch (err) {
-      const errMsg = "The server is waking up! Please try again in 30 seconds.";
+      const errMsg = "Server is not responding. Please try again in a moment.";
       addMessage('system', errMsg);
       speak(errMsg);
-    }finally {
+    } finally {
       setIsProcessing(false);
     }
   }, [isProcessing, history, tasks, pendingDelete, token]);
