@@ -9,25 +9,11 @@ const authRoute = require('./routes/auth');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const allowedOrigins = [
-  'http://localhost:5173',
-  process.env.FRONTEND_URL,
-].filter(Boolean);
-
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    callback(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+// Allow ALL origins
+app.use(cors());
 app.use(express.json());
 
-// Public routes - no auth needed
 app.use('/api/auth', authRoute);
-
-// Protected routes
 app.use('/api/chat', chatRoute);
 app.use('/api/tasks', tasksRoute);
 
