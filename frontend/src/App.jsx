@@ -6,6 +6,11 @@ import Auth from './components/Auth';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
+// The user's local calendar date (YYYY-MM-DD), not the UTC date.
+const localToday = () => new Date().toLocaleDateString('en-CA');
+
+let messageCounter = 0;
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
@@ -64,7 +69,7 @@ export default function App() {
   };
 
   const addMessage = (role, text) => {
-    setMessages(prev => [...prev, { role, text, id: Date.now() }]);
+    setMessages(prev => [...prev, { role, text, id: ++messageCounter }]);
   };
 
   const handleTranscript = useCallback(async (text) => {
@@ -85,7 +90,7 @@ export default function App() {
           const updated = await fetch(`${API_BASE}/tasks`, {
             headers: { Authorization: `Bearer ${token}` }
           }).then(r => r.json());
-          setTasks(updated);
+          setTasks(Array.isArray(updated) ? updated : []);
           const reply = `Done. Deleted "${pendingDelete.title}".`;
           addMessage('assistant', reply);
           speak(reply);
@@ -112,7 +117,7 @@ export default function App() {
               'Content-Type': 'application/json',
               Authorization: `Bearer ${token}`
             },
-            body: JSON.stringify({ transcript: text, history, tasks }),
+            body: JSON.stringify({ transcript: text, history, today: localToday() }),
           });
           break; // server responded (even with an error status) — stop retrying
         } catch (networkErr) {
@@ -126,6 +131,10 @@ export default function App() {
         }
       }
 
+      if (response.status === 401) {
+        handleLogout();
+        return;
+      }
       if (!response.ok) throw new Error('Server error');
       const data = await response.json();
 

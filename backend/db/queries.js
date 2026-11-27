@@ -1,4 +1,9 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// Return DATE columns as plain 'YYYY-MM-DD' strings instead of JS Date objects.
+// Otherwise they are serialized as '2026-11-27T00:00:00.000Z', which breaks the
+// "Today"/"Tomorrow" grouping in the UI and can shift the day by timezone.
+types.setTypeParser(1082, (value) => value);
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -73,3 +78,4 @@ const db = {
 };
 
 module.exports = db;
+module.exports.pool = pool;
