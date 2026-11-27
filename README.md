@@ -1,6 +1,33 @@
 # VoiceTask
 
-A voice-first task manager: speak naturally, and an LLM turns what you say into tasks.
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-Express-339933?logo=node.js&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-4169E1?logo=postgresql&logoColor=white)
+![LLM](https://img.shields.io/badge/LLM-Llama%203.3%2070B%20(Groq)-F55036)
+![Deploy](https://img.shields.io/badge/deployed-Vercel%20%2B%20Render-000000?logo=vercel)
+
+A voice-first task manager: speak naturally, and an LLM turns what you say into tasks. Full-stack, deployed, and built end to end — speech UI, REST API, auth, database and LLM integration.
+
+## Highlights
+
+- **Natural-language → structured actions:** the LLM returns strict JSON (`create`, `create_many`, `update`, `delete`, `read`) that the backend validates and executes against PostgreSQL
+- **Conversation memory:** recent turns are sent back to the model, so "change the previous one to 6 PM" works
+- **Safe by design:** deletes always require a spoken yes/no confirmation; every query is scoped to the logged-in user; client-supplied history can't inject system prompts
+- **Real-time voice UX:** Web Speech API for recognition, SpeechSynthesis for replies, barge-in (talk over the assistant to interrupt it)
+- **Production concerns handled:** JWT auth with bcrypt, retry on cold-start of the free-tier backend, timezone-correct dates
+
+## Architecture
+
+```mermaid
+flowchart LR
+    U[🎤 User speech] --> FE[React frontend<br/>Web Speech API]
+    FE -- transcript + local date + history --> API[Express API<br/>JWT auth]
+    API -- system prompt + tasks --> LLM[Groq · Llama 3.3 70B<br/>JSON mode]
+    LLM -- action JSON --> API
+    API -- parameterised SQL --> DB[(PostgreSQL)]
+    API -- reply + tasks --> FE
+    FE --> TTS[🔊 Spoken reply]
+```
 
 
 ## Live Demo
