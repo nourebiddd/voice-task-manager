@@ -6,8 +6,34 @@ const authMiddleware = require('../middleware/auth');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const SYSTEM_PROMPT = `You are an intelligent voice assistant for a task manager app.
-Today's date is: ${new Date().toISOString().split('T')[0]}
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Prefer the user's local date (sent by the browser) so "today" is correct in
+// their timezone; fall back to the server's UTC date.
+function resolveToday(clientToday) {
+  if (typeof clientToday === 'string' && ISO_DATE.test(clientToday)) return clientToday;
+  return new Date().toISOString().split('T')[0];
+}
+
+function addDays(isoDate, days) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+// Only pass genuine user/assistant turns back to the model — never let the
+// client inject 'system' messages — and cap their size.
+function sanitizeHistory(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+    .slice(-10)
+    .map(m => ({ role: m.role, content: m.content.slice(0, 4000) }));
+}
+
+// Built per request: a module-level constant would freeze "today" at server start.
+const buildSystemPrompt = (today) => `You are an intelligent voice assistant for a task manager app.
+Today's date is: ${today}
 
 Always respond with valid JSON only. No extra text, no markdown, just raw JSON.
 
@@ -31,12 +57,16 @@ Rules:
 
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { transcript, history = [], tasks = [] } = req.body;
+    const { transcript, history = [], today: clientToday } = req.body;
     const userId = req.user.id;
+    const today = resolveToday(clientToday);
 
-    if (!transcript || transcript.trim() === '') {
+    if (typeof transcript !== 'string' || transcript.trim() === '') {
       return res.status(400).json({ error: 'No transcript provided' });
     }
+
+    // Read the user's tasks from the database instead of trusting the client copy.
+    const tasks = await db.getAllTasks(null, userId);
 
     const contextMessage = `Current tasks:
 ${tasks.length === 0 ? 'No tasks yet.' : tasks.map(t =>
@@ -45,17 +75,17 @@ ${tasks.length === 0 ? 'No tasks yet.' : tasks.map(t =>
 
 User said: "${transcript}"`;
 
-    const recentHistory = history.slice(-10);
     const messages = [
-      ...recentHistory,
+      ...sanitizeHistory(history),
       { role: 'user', content: contextMessage }
     ];
 
     const response = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       max_tokens: 1000,
+      response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: buildSystemPrompt(today) },
         ...messages
       ],
     });
@@ -70,19 +100,22 @@ User said: "${transcript}"`;
       return res.json({
         action: 'none',
         reply: "Sorry, didn't catch that. Could you say it again?",
-        tasks: await db.getAllTasks(null, userId),
+        tasks,
       });
     }
+
+    parsed.payload = parsed.payload || {};
 
     let updatedTasks = tasks;
 
     try {
       if (parsed.action === 'create') {
-        await db.createTask({ ...parsed.payload, user_id: userId });
+        await db.createTask({ scheduled_date: today, ...parsed.payload, user_id: userId });
         updatedTasks = await db.getAllTasks(null, userId);
       } else if (parsed.action === 'create_many') {
-        for (const task of parsed.payload.tasks) {
-          await db.createTask({ ...task, user_id: userId });
+        const newTasks = Array.isArray(parsed.payload.tasks) ? parsed.payload.tasks : [];
+        for (const task of newTasks) {
+          await db.createTask({ scheduled_date: today, ...task, user_id: userId });
         }
         updatedTasks = await db.getAllTasks(null, userId);
       } else if (parsed.action === 'update') {
@@ -90,14 +123,12 @@ User said: "${transcript}"`;
         await db.updateTask(id, fields, userId);
         updatedTasks = await db.getAllTasks(null, userId);
       } else if (parsed.action === 'delete') {
-        if (!parsed.payload.needs_confirmation) {
-          await db.deleteTask(parsed.payload.id, userId);
-          updatedTasks = await db.getAllTasks(null, userId);
-        }
+        // Never delete straight from the model's output: the client asks the
+        // user to confirm and then calls DELETE /api/tasks/:id itself.
+        parsed.payload.needs_confirmation = true;
       } else if (parsed.action === 'read') {
-        const today = new Date().toISOString().split('T')[0];
-        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-        const filter = parsed.payload && parsed.payload.filter;
+        const tomorrow = addDays(today, 1);
+        const filter = parsed.payload.filter;
         if (filter === 'today') updatedTasks = await db.getAllTasks(today, userId);
         else if (filter === 'tomorrow') updatedTasks = await db.getAllTasks(tomorrow, userId);
         else updatedTasks = await db.getAllTasks(null, userId);

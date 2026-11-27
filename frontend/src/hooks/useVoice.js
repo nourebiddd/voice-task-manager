@@ -8,6 +8,22 @@ export function useVoice({ onTranscript, onInterrupt }) {
 
   const recognitionRef = useRef(null);
 
+  // Keep the latest callbacks/state in refs. The recognition object is created
+  // once, so reading them directly would capture stale values from the first
+  // render (e.g. a null auth token right after login, or outdated tasks).
+  const onTranscriptRef = useRef(onTranscript);
+  const onInterruptRef = useRef(onInterrupt);
+  const isSpeakingRef = useRef(false);
+
+  useEffect(() => {
+    onTranscriptRef.current = onTranscript;
+    onInterruptRef.current = onInterrupt;
+  }, [onTranscript, onInterrupt]);
+
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -31,13 +47,13 @@ export function useVoice({ onTranscript, onInterrupt }) {
 
       setTranscript(final || interim);
 
-      if (isSpeaking && (final || interim).length > 2) {
+      if (isSpeakingRef.current && (final || interim).length > 2) {
         window.speechSynthesis.cancel();
-        onInterrupt && onInterrupt();
+        onInterruptRef.current && onInterruptRef.current();
       }
 
       if (final) {
-        onTranscript && onTranscript(final.trim());
+        onTranscriptRef.current && onTranscriptRef.current(final.trim());
         setTranscript('');
       }
     };
@@ -54,7 +70,15 @@ export function useVoice({ onTranscript, onInterrupt }) {
     };
 
     recognitionRef.current = recognition;
-  }, [isSpeaking]);
+
+    return () => {
+      recognition.onresult = null;
+      recognition.onend = null;
+      recognition.onerror = null;
+      try { recognition.abort(); } catch { /* not started */ }
+      recognitionRef.current = null;
+    };
+  }, []);
 
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;
@@ -62,7 +86,9 @@ export function useVoice({ onTranscript, onInterrupt }) {
     try {
       recognitionRef.current.start();
       setIsListening(true);
-    } catch (e) {}
+    } catch {
+      // start() throws if recognition is already running — safe to ignore
+    }
   }, []);
 
   const stopListening = useCallback(() => {
